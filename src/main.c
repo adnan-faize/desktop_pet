@@ -9,7 +9,7 @@
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
 
-int main(void)
+int main(void) // TODO : add args to set max fps & other things
 {
     application_t app_params =
         {

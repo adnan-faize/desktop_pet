@@ -14,9 +14,9 @@
 #include <windows.h>
 #include <shellapi.h>
 
-export bool __win_tray_init();
-export bool __win_tray_update();
-export bool __win_tray_exit();
+extern bool __win_tray_init();
+extern bool __win_tray_update();
+extern bool __win_tray_exit();
 
 #define _tray_init() nullptr
 #define _tray_update() nullptr

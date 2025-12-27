@@ -36,7 +36,11 @@
 #define PLATFORM_BARE_METAL
 
 /* ----- ERROR ----- */
-#else 
+#else
 #define PLATFORM_UNKNOWN
+
+#define _app_init() nullptr
+#define _app_update() nullptr
+#define _app_exit() nullptr
 
 #endif
