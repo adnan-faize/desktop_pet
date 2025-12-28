@@ -1,20 +1,32 @@
+/**
+ * @file tray.h
+ *
+ * @author Adnan Faize <adnanfaize@gmail.com>
+ */
 
-struct tray_menu;
+#include "../platform.h"
 
-struct tray {
-  char *icon;
-  struct tray_menu *menu;
+#ifdef TRAY_SUPPORT
+
+typedef struct _tray tray;
+typedef struct _tray_menu tray_menu;
+
+struct _tray {
+    char *icon;
+    tray_menu *menu;
 };
 
-struct tray_menu {
-  char *text;
-  int disabled;
-  int checked;
+struct _tray_menu {
+    char *text;
+    int disabled;
+    int checked;
 
-  void (*cb)(struct tray_menu *);
-  void *context;
+    void (*cb)(tray_menu *);
+    void *context;
 
-  struct tray_menu *submenu;
+    tray_menu *submenu;
 };
 
-static void tray_update(struct tray *tray);
+static void tray_update(tray *tray);
+
+#endif

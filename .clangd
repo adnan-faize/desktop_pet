@@ -1,12 +1,14 @@
 # yaml-language-server: $schema=https://json.schemastore.org/clangd.json
 
 CompileFlags:
-  Add:
-    - -xc
-    - -std=c23
-    - -Wall
-    - -I/opt/devkitpro/libnds/include
-    - -I/usr/x86_64-w64-mingw32/sys-root/mingw/include
-    - -D_WIN32
-    - -DARM9
-    - -fdeclspec
+    Add:
+        [
+            "-xc",
+            "-std=c23",
+            "-Wall",
+            "-I/usr/x86_64-w64-mingw32/sys-root/mingw/include",
+            "-I/opt/devkitpro/libctru/include",
+            "-I/opt/devkitpro/libnds/include",
+            "-fdeclspec",
+            "-D_WIN32",
+        ]

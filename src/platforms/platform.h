@@ -6,41 +6,27 @@
 
 #pragma once
 
-/* ----- NINTENDO 3DS ----- */
-#if 0
+#if 0                                                           //----- NINTENDO 3DS
 #define PLATFORM_NINTENDO_3DS
-#include "nintendo_3ds/3ds_app.h"
-
-/* ----- NINTENDO NDS ----- */
-#elif 0
+#elif 0                                                         // ----- NINTENDO NDS
 #define PLATFORM_NINTENDO_NDS
-#include "nintendo_nds/nds_app.h"
-
-/* ----- WINDOWS ----- */
-#elif defined(_WIN32) || defined(_WIN64)
+#elif defined(_WIN32) || defined(_WIN64)                        // ----- WINDOWS
 #define PLATFORM_WINDOWS
-#include "windows/win_app.h"
-
-/* ----- LINUX ----- */
-#elif defined(__linux__) || defined(linux) || defined(__linux)
+#elif defined(__linux__) || defined(linux) || defined(__linux)  // ----- LINUX
 #define PLATFORM_LINUX
-#include "linux/linux_app.h"
-
-/* ----- MACOS ----- */
-#elif defined(__APPLE__) || defined(__MACH__)
+#elif defined(__APPLE__) || defined(__MACH__)                   // ----- MACOS
 #define PLATFORM_MACOS
-#include "macos/mac_app.h"
-
-/* ----- BARE METAL ----- */
-#elif 0
+#elif 0                                                         // ----- BARE METAL
 #define PLATFORM_BARE_METAL
-
-/* ----- ERROR ----- */
-#else
+#else                                                           // ----- ERROR
 #define PLATFORM_UNKNOWN
-
-#define _app_init() nullptr
-#define _app_update() nullptr
-#define _app_exit() nullptr
-
 #endif
+
+extern bool __app_init(void);
+static inline bool _app_init(void) { return __app_init(); }
+extern bool __app_loop(void);
+static inline bool _app_loop(void) { return __app_loop(); }
+extern bool __app_exit(void);
+static inline bool _app_exit(void) { return __app_exit(); }
+extern bool __app_update(void);
+static inline bool _app_update(void) { return __app_update(); }
