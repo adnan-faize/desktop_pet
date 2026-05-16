@@ -4,7 +4,7 @@
  * @author Adnan FAIZE <adnanfaize@gmail.com>
  */
 
-#include "../core/runtime/runtime.h"
+#include <src/core/runtime/runtime.h>
 
 #ifndef APP_VERSION
 #define APP_VERSION "error : unknown version"
@@ -13,8 +13,9 @@
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
 
-// -v --version 
+// -v --version
 // -h --help
+// --start-minimized
 
 void help() {
 
