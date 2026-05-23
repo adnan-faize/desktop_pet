@@ -4,7 +4,8 @@
  * @author Adnan FAIZE <adnanfaize@gmail.com>
  */
 
-#pragma once
+#ifndef CORE_RUNTIME_H_
+#define CORE_RUNTIME_H_
 
 typedef enum _application_params_t application_params_t;
 enum _application_params_t {
@@ -21,3 +22,5 @@ struct _application_t {
 };
 
 extern bool application_run(application_t *details);
+
+#endif // APP_RUNTIME_H_

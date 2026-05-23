@@ -7,6 +7,7 @@
 #include "runtime.h"
 
 typedef bool (*layer_init)(void);
+
 struct _app_layer_t {
     layer_init *inits;
     bool (*layer_update)();
