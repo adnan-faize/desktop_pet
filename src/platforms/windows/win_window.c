@@ -1,50 +1,65 @@
-#ifndef UNICODE
-#define UNICODE
-#endif
 
-#define WIN32_LEAN_AND_MEAN
+#ifdef PLATFORM_WINDOWS
+
 #include <windows.h>
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
-    const wchar_t CLASS_NAME[] = L"CompileTimeGhostWindow";
+#include <stdlib.h>
+#include <stdint.h>
 
-    WNDCLASSW wc = {0};
-    wc.lpfnWndProc   = DefWindowProcW; // Simplified for example
-    wc.hInstance     = hInstance;
-    wc.lpszClassName = CLASS_NAME;
-    RegisterClassW(&wc);
+#include "src/core/features/window.h"
 
-    // 1. Set styles based entirely on compile-time targets
-#ifdef TARGET_RETRO_WIN98
-    DWORD exStyle = WS_EX_TOOLWINDOW;
-#else
-    // Modern default (XP through 11)
-    DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT;
-#endif
+static LRESULT CALLBACK WinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    window_t* win = (window_t*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
-    HWND hwnd = CreateWindowExW(
-        exStyle, CLASS_NAME, L"Ghost Window", WS_POPUP,
-        100, 100, 800, 600, NULL, NULL, hInstance, NULL
-    );
+    if (uMsg == WM_DESTROY || uMsg == WM_CLOSE) {
+        if (win) { win->should_close = 1; }
+        PostQuitMessage(0);
+        return 0;
+    }
 
-    if (hwnd == NULL) return 0;
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
 
-    // 2. Execute the specific architecture branch at compile time
-#ifdef TARGET_RETRO_WIN98
-    // --- Windows 98 Only Compilation ---
-    HRGN empty_region = CreateRectRgn(0, 0, 0, 0);
-    SetWindowRgn(hwnd, empty_region, TRUE);
-#else
-    // --- Modern Windows (XP-11) Only Compilation ---
-    SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
-#endif
+int window_create(window_t* win, uint32_t width, uint32_t height, const char* title) {
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    const char* clsName = "AppContextCls";
 
-    ShowWindow(hwnd, nShowCmd);
+    WNDCLASS wc = {0};
+    wc.lpfnWndProc = WinProc;
+    wc.hInstance = hInst;
+    wc.lpszClassName = clsName;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    RegisterClass(&wc);
 
-    MSG msg = {0};
-    while (GetMessage(&msg, NULL, 0, 0) > 0) {
+    HWND hwnd = CreateWindowEx(0, clsName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, hInst, NULL);
+
+    if (!hwnd) { return EXIT_FAILURE; }
+
+    win->native_handle = (void*)hwnd;
+    win->display_server = NULL;
+    win->width = width;
+    win->height = height;
+    win->should_close = 0;
+
+    SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)win);
+    ShowWindow(hwnd, SW_SHOW);
+
+    return EXIT_SUCCESS;
+}
+
+void window_poll_events(window_t* win) {
+    MSG msg;
+
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-    return 0;
 }
+
+void window_destroy(window_t* win) {
+    if (win->native_handle) {
+        DestroyWindow((HWND)win->native_handle);
+    }
+}
+
+#endif

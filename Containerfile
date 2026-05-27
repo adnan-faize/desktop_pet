@@ -1,10 +1,27 @@
-FROM registry.fedoraproject.org/fedora-toolbox:43
+FROM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 
-# TODO
-# add gcc , ....
-#
-# add mingw newer versions (for new versions of windows)
-# add mingw older versions (for old versions of windows like 98)
-#
-# add wine for windows testing, or make a virtual machine using qemu
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # core build tools
+    build-essential \
+    git \
+    # meson and ninja
+    meson \
+    ninja-build \
+    # native linux C development
+    gcc \
+    libc6-dev \
+    # windows cross-compilation toolchain
+    mingw-w64 \
+    gcc-mingw-w64-i686 \
+    # testing windows binaries on linux
+    wine64 \
+    # documentation generation
+    doxygen \
+    graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]

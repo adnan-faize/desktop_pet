@@ -11,7 +11,7 @@ version_macro = '-DAPP_VERSION="v.' + meson.project_version() + '"'
 add_project_arguments(version_macro, language: 'c')
 
 app_sources = files(
-    'src/platforms/linux/x11_window.c',
+    'src/*',
 )
 
 dependencies = []
@@ -25,15 +25,21 @@ dependencies = []
 target_os = host_machine.system()
 
 if target_os == 'windows'
+    add_project_arguments('-DPLATFORM_WINDOWS', language: 'c')
 
-    # TODO
+    user32_dependency = meson.get_compiler('c').find_library('user32')
+    gdi32_dependency = meson.get_compiler('c').find_library('user32')
 
+    dependencies += [
+        user32_dependency,
+        gdi32_dependency,
+    ]
 
 elif target_os == 'linux'
     add_project_arguments('-DPLATFORM_LINUX', language: 'c')
 
-    x11_dependency     = dependency('x11', required: true)
-    xfixes_dependency  = dependency('xfixes', required: true)
+    x11_dependency = dependency('x11', required: true)
+    xfixes_dependency = dependency('xfixes', required: true)
 
     dependencies += [
         x11_dependency,

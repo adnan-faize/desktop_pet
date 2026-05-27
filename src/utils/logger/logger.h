@@ -11,12 +11,11 @@
 #include <stdio.h>
 #include <time.h>
 
-#define LOG_FILE "test.log"
-
+char *log_file = "default.log";
 bool log_to_console = false;
 
 static inline void _log_msg(const char* level, const char* format, va_list args) {
-    FILE* file_stream = fopen(LOG_FILE, "a");
+    FILE* file_stream = fopen(log_file, "a");
     if (!file_stream && !log_to_console) { return; }
 
     time_t raw_time;
