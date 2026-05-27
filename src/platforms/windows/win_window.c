@@ -31,9 +31,13 @@ int window_create(window_t* win, uint32_t width, uint32_t height, const char* ti
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClass(&wc);
 
-    HWND hwnd = CreateWindowEx(0, clsName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, hInst, NULL);
+    DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT;
+
+    HWND hwnd = CreateWindowEx(exStyle, clsName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, hInst, NULL);
 
     if (!hwnd) { return EXIT_FAILURE; }
+
+    SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
 
     win->native_handle = (void*)hwnd;
     win->display_server = NULL;
