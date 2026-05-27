@@ -3,7 +3,7 @@ project(
     'c',
     version: '0.1',
     default_options: [
-        'c_std=c23',
+        'c_std=c99',
     ],
 )
 
@@ -11,7 +11,10 @@ version_macro = '-DAPP_VERSION="v.' + meson.project_version() + '"'
 add_project_arguments(version_macro, language: 'c')
 
 app_sources = files(
-    'src/*',
+    'src/core/features/window.h',
+    'src/main.c',
+    'src/platforms/linux/linux_window.c',
+    'src/platforms/windows/win_window.c',
 )
 
 dependencies = []

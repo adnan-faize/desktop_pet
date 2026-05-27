@@ -2,13 +2,25 @@
 #ifdef PLATFORM_LINUX
 
 #include <X11/Xlib.h>
+#include <wayland-client.h>
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "src/core/features/window.h"
 
 int window_create(window_t* win, uint32_t width, uint32_t height, const char* title) {
+    if (!getenv("WAYLAND_DISPLAY")) {  }
+
+    struct wl_compositor* wl_comp = NULL;
+    struct wl_surface* wl_surf = NULL;
+    
+    struct wl_display* display = wl_display_connect(NULL);
+    if (!display) { return 1; }
+
+    struct wl_registry* registry = wl_display_get_registry(display);
+
     Display* display = XOpenDisplay(NULL);
     if (!display) { return EXIT_FAILURE; }
 
