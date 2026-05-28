@@ -69,47 +69,38 @@ void renderer_draw_image(window_t* win, image_t* img, int x, int y, int sw, int 
 #ifdef PLATFORM_LINUX
     Display* display = (Display*)win->display_server;
     Window window = (Window)win->native_handle;
-    XImage* ximg = (XImage*)img->native_image;
     
     if (!global_gc) {
         global_gc = XCreateGC(display, window, 0, NULL);
     }
 
+    XWindowAttributes wa;
+    XGetWindowAttributes(display, window, &wa);
+
     XClearWindow(display, window);
 
-    if (ximg) {
-        // If sw/sh (destination size) is different from source size, we need to scale.
-        // For simplicity and performance, if sw is exactly 2x the source frame,
-        // we can do a simple nearest-neighbor scale or use XCopyArea with a temporary pixmap.
-        // However, XPutImage doesn't scale. We need to scale the pixels or use a Pixmap.
-        
-        int src_w = img->width / 3; // Hardcoded cols for now to find source frame size
-        int src_h = img->height / 4; // Hardcoded rows
-        
-        if (sw == src_w * 2 && sh == src_h * 2) {
-            // Manual nearest neighbor scaling for 2x
-            unsigned char* scaled_pixels = malloc(sw * sh * 4);
-            for (int i = 0; i < sh; i++) {
-                for (int j = 0; j < sw; j++) {
-                    int src_i = sy + i / 2;
-                    int src_j = sx + j / 2;
-                    memcpy(scaled_pixels + (i * sw + j) * 4, 
-                           img->pixels + (src_i * img->width + src_j) * 4, 4);
-                }
+    // Calculate source frame size
+    int src_frame_w = img->width / 3;
+    int src_frame_h = img->height / 4;
+
+    // Check if we need to scale (sw/sh are 2x src_frame_w/h)
+    if (sw > src_frame_w) {
+        unsigned char* scaled_pixels = malloc(sw * sh * 4);
+        for (int i = 0; i < sh; i++) {
+            for (int j = 0; j < sw; j++) {
+                int src_i = sy + (i * src_frame_h / sh);
+                int src_j = sx + (j * src_frame_w / sw);
+                memcpy(scaled_pixels + (i * sw + j) * 4, 
+                       img->pixels + (src_i * img->width + src_j) * 4, 4);
             }
-            XImage* xscaled = XCreateImage(display, DefaultVisual(display, DefaultScreen(display)), 
-                                          24, ZPixmap, 0, (char*)scaled_pixels, sw, sh, 32, sw * 4);
-            // Note: depth/visual should ideally match window, but Default often works for quick tests
-            // Re-fetching attributes to be sure:
-            XWindowAttributes wa;
-            XGetWindowAttributes(display, window, &wa);
-            xscaled->format = ZPixmap;
-            xscaled->byte_order = LSBFirst;
-            xscaled->bitmap_bit_order = LSBFirst;
-            
-            XPutImage(display, window, global_gc, xscaled, 0, 0, x, y, sw, sh);
-            XDestroyImage(xscaled); // Frees scaled_pixels
-        } else {
+        }
+        XImage* xscaled = XCreateImage(display, wa.visual, wa.depth, ZPixmap, 0, 
+                                      (char*)scaled_pixels, sw, sh, 32, sw * 4);
+        XPutImage(display, window, global_gc, xscaled, 0, 0, x, y, sw, sh);
+        XDestroyImage(xscaled); // This also frees scaled_pixels
+    } else {
+        XImage* ximg = (XImage*)img->native_image;
+        if (ximg) {
             XPutImage(display, window, global_gc, ximg, sx, sy, x, y, sw, sh);
         }
     }
