@@ -1,12 +1,9 @@
-
 #ifdef PLATFORM_WINDOWS
 
 #include <windows.h>
-
 #include <stdlib.h>
 #include <stdint.h>
-
-#include "src/core/features/window.h"
+#include "window.h"
 
 static LRESULT CALLBACK WinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     window_t* win = (window_t*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
@@ -20,9 +17,9 @@ static LRESULT CALLBACK WinProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-int window_create(window_t* win, uint32_t width, uint32_t height, const char* title) {
+window_t* window_create(uint32_t width, uint32_t height, const char* title) {
     HINSTANCE hInst = GetModuleHandle(NULL);
-    const char* clsName = "AppContextCls";
+    const char* clsName = "DesktopPetCls";
 
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WinProc;
@@ -31,14 +28,17 @@ int window_create(window_t* win, uint32_t width, uint32_t height, const char* ti
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClass(&wc);
 
-    DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT;
+    if (width == 0) width = GetSystemMetrics(SM_CXSCREEN);
+    if (height == 0) height = GetSystemMetrics(SM_CYSCREEN);
 
-    HWND hwnd = CreateWindowEx(exStyle, clsName, title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, hInst, NULL);
+    DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT;
 
-    if (!hwnd) { return EXIT_FAILURE; }
+    HWND hwnd = CreateWindowEx(exStyle, clsName, title, WS_POPUP, 
+                              0, 0, width, height, NULL, NULL, hInst, NULL);
 
-    SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+    if (!hwnd) { return NULL; }
 
+    window_t* win = malloc(sizeof(window_t));
     win->native_handle = (void*)hwnd;
     win->display_server = NULL;
     win->width = width;
@@ -46,14 +46,29 @@ int window_create(window_t* win, uint32_t width, uint32_t height, const char* ti
     win->should_close = 0;
 
     SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)win);
+    SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
+    
     ShowWindow(hwnd, SW_SHOW);
 
-    return EXIT_SUCCESS;
+    return win;
+}
+
+void window_get_mouse_pos(window_t* win, int* x, int* y) {
+    POINT p;
+    GetCursorPos(&p);
+    *x = p.x;
+    *y = p.y;
+}
+
+void window_set_mouse_pos(window_t* win, int x, int y) {
+    SetCursorPos(x, y);
+}
+
+void window_set_input_region(window_t* win, int x, int y, int w, int h) {
 }
 
 void window_poll_events(window_t* win) {
     MSG msg;
-
     while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
@@ -61,8 +76,11 @@ void window_poll_events(window_t* win) {
 }
 
 void window_destroy(window_t* win) {
-    if (win->native_handle) {
-        DestroyWindow((HWND)win->native_handle);
+    if (win) {
+        if (win->native_handle) {
+            DestroyWindow((HWND)win->native_handle);
+        }
+        free(win);
     }
 }
 

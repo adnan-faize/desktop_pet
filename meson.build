@@ -10,54 +10,42 @@ project(
 version_macro = '-DAPP_VERSION="v.' + meson.project_version() + '"'
 add_project_arguments(version_macro, language: 'c')
 
+cc = meson.get_compiler('c')
+m_dep = cc.find_library('m', required : false)
+
 app_sources = files(
-    'src/core/features/window.h',
     'src/main.c',
-    'src/platforms/linux/linux_window.c',
-    'src/platforms/windows/win_window.c',
+    'src/window/linux_window.c',
+    'src/window/windows_window.c',
+    'src/renderer/renderer.c',
+    'src/physics/physics.c',
+    'src/tray/linux_tray.c',
+    'src/tray/win_tray.c',
 )
 
-dependencies = []
-
-# target_cpu = host_machine.cpu_family()
-
-# if target_cpu == 'arm'
-
-# endif
+dependencies = [m_dep]
 
 target_os = host_machine.system()
 
 if target_os == 'windows'
     add_project_arguments('-DPLATFORM_WINDOWS', language: 'c')
-
-    user32_dependency = meson.get_compiler('c').find_library('user32')
-    gdi32_dependency = meson.get_compiler('c').find_library('user32')
-
     dependencies += [
-        user32_dependency,
-        gdi32_dependency,
+        cc.find_library('user32'),
+        cc.find_library('gdi32'),
+        cc.find_library('shell32'),
     ]
-
 elif target_os == 'linux'
     add_project_arguments('-DPLATFORM_LINUX', language: 'c')
-
-    x11_dependency = dependency('x11', required: true)
-    xfixes_dependency = dependency('xfixes', required: true)
-
     dependencies += [
-        x11_dependency,
-        xfixes_dependency,
+        dependency('x11'),
+        dependency('xext'),
+        dependency('gtk+-3.0'),
     ]
-
-    wayland_dependency = dependency('wayland-client', required: false)
-    if wayland_dependency.found()
-        dependencies += [wayland_dependency]
-        add_project_arguments('-DWAYLAND', language: 'c')
-    endif
 endif
 
 executable(
     'Desktop Pet',
     app_sources,
     dependencies: dependencies,
+    include_directories: include_directories('src'),
 )
