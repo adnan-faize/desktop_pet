@@ -1,0 +1,131 @@
+#define _DEFAULT_SOURCE
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <time.h>
+#include <stdbool.h>
+#include <math.h>
+
+#include "window/window.h"
+#include "renderer/renderer.h"
+#include "physics/physics.h"
+#include "tray/tray.h"
+
+#ifdef PLATFORM_LINUX
+#include <X11/Xlib.h>
+#endif
+
+static void on_quit(void* user_data) {
+    window_t* win = (window_t*)user_data;
+    win->should_close = 1;
+}
+
+int main(int argc, char** argv) {
+    srand(time(NULL));
+
+    const char* asset_path = "res/sprites/rabbits/Rabbit7.png";
+    if (access(asset_path, F_OK) == -1) asset_path = "../res/sprites/rabbits/Rabbit7.png";
+
+    window_t* temp_win = window_create(1, 1, "Temp");
+    uint32_t screen_w = 1920, screen_h = 1080;
+#ifdef PLATFORM_LINUX
+    Display* dpy = (Display*)temp_win->display_server;
+    XWindowAttributes root_attrs;
+    XGetWindowAttributes(dpy, RootWindow(dpy, DefaultScreen(dpy)), &root_attrs);
+    screen_w = root_attrs.width;
+    screen_h = root_attrs.height;
+#elif defined(PLATFORM_WINDOWS)
+    screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+#endif
+
+    image_t* spritesheet = image_load(temp_win, asset_path);
+    if (!spritesheet) return EXIT_FAILURE;
+
+    int cols = 3, rows = 4;
+    int frame_w = (spritesheet->width / cols) * 2;
+    int frame_h = (spritesheet->height / rows) * 2;
+
+    window_destroy(temp_win);
+    window_t* win = window_create(frame_w, frame_h, "Desktop Pet");
+
+    tray_t* tray = tray_create(asset_path, "Desktop Pet");
+    if (tray) tray_add_item(tray, "Quit", on_quit, win);
+
+    body_t pet_body = {
+        .position = {100, 100},
+        .velocity = {0, 0},
+        .size = {(float)frame_w, (float)frame_h},
+        .speed = 300.0f
+    };
+
+    bool is_snatching = false;
+    vec2_t snatch_target = {0, 0};
+    float snatch_timer = 0;
+    float dt = 0.016f;
+    int current_frame = 0;
+    
+    // Set the input region to cover the whole window (the rabbit's body)
+    // Since the window is exactly the size of the rabbit, 0,0 is the correct origin.
+    window_set_input_region(win, 0, 0, frame_w, frame_h);
+
+    while (!win->should_close) {
+        window_poll_events(win);
+        if (tray) tray_update(tray);
+
+        int mx, my;
+        window_get_mouse_pos(win, &mx, &my);
+        
+        if (!is_snatching) {
+            physics_follow_target(&pet_body, (float)mx, (float)my, dt);
+            float dx = (float)mx - (pet_body.position.x + pet_body.size.x / 2.0f);
+            float dy = (float)my - (pet_body.position.y + pet_body.size.y / 2.0f);
+            if (sqrtf(dx * dx + dy * dy) < 60.0f) {
+                is_snatching = true;
+                snatch_target.x = (float)(rand() % (screen_w - (int)pet_body.size.x));
+                snatch_target.y = (float)(rand() % (screen_h - (int)pet_body.size.y));
+                snatch_timer = 5.0f;
+                pet_body.speed = 800.0f;
+            }
+        } else {
+            physics_follow_target(&pet_body, snatch_target.x, snatch_target.y, dt);
+            int jx = (rand() % 10) - 5, jy = (rand() % 10) - 5;
+            window_set_mouse_pos(win, (int)(pet_body.position.x + pet_body.size.x / 2.0f) + jx, 
+                                     (int)(pet_body.position.y + pet_body.size.y / 2.0f) + jy);
+            
+            snatch_timer -= dt;
+            int nx, ny;
+            window_get_mouse_pos(win, &nx, &ny);
+            float rdx = (float)nx - (pet_body.position.x + pet_body.size.x / 2.0f);
+            float rdy = (float)ny - (pet_body.position.y + pet_body.size.y / 2.0f);
+            if (sqrtf(rdx * rdx + rdy * rdy) > 200.0f || snatch_timer <= 0) {
+                is_snatching = false;
+                pet_body.speed = 300.0f;
+            }
+        }
+        
+        physics_update(&pet_body, dt, (float)screen_w, (float)screen_h);
+
+        window_move(win, (int)pet_body.position.x, (int)pet_body.position.y);
+
+        static float anim_timer = 0;
+        anim_timer += dt;
+        if (anim_timer > (is_snatching ? 0.03f : 0.1f)) {
+            current_frame = (current_frame + 1) % (cols * rows);
+            anim_timer = 0;
+        }
+
+        int sx = (current_frame % cols) * (spritesheet->width / cols);
+        int sy = (current_frame / cols) * (spritesheet->height / rows);
+
+        renderer_draw_image(win, spritesheet, 0, 0, frame_w, frame_h, sx, sy);
+        renderer_present(win);
+
+        usleep(16000);
+    }
+
+    if (tray) tray_destroy(tray);
+    image_free(spritesheet);
+    window_destroy(win);
+    return EXIT_SUCCESS;
+}
