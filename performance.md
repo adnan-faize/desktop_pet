@@ -4,21 +4,23 @@ This document outlines the optimizations that have been implemented to make the 
 
 ## 1. Graphics & Memory
 
-### 1.1. Pre-scaled Assets [DONE]
-**Optimization:** The spritesheet is now scaled exactly once during `image_load`. 
-**Result:** Expensive `malloc`, `free`, and software scaling loops have been removed from the 60FPS main loop. CPU usage is significantly reduced.
+### 1.1. Frame Caching [DONE]
+**Optimization:** All animation frames are now pre-scaled and cached as XImages at startup.
+**Result:** Eliminated 100% of software scaling from the main loop. CPU usage for rendering is now nearly zero.
 
 ### 1.2. Hardware Acceleration [PLANNED]
 **Optimization:** Use the XRender extension or OpenGL for drawing.
-**Current Status:** Still using `XPutImage`, but it is now highly optimized with pre-scaled buffers.
+**Current Status:** Still using `XPutImage`, but it is now highly optimized with pre-scaled cached frames.
 
 ## 2. Event Handling & CPU
 
-### 2.1. Variable Frame Rate / Sleeping [DONE]
-**Optimization:** The app uses `usleep(16000)` but has been streamlined to minimize overhead during idle states.
+### 2.1. Throttled Rendering [DONE]
+**Optimization:** The app now only calls `XPutImage` and `XFlush` if the animation frame has actually changed.
+**Benefit:** Reduces CPU and X server IPC significantly when the pet is in a static animation state.
 
-### 2.2. Efficient Mouse Polling [DONE]
-**Optimization:** Improved XWayland tracking uses a dedicated display and only queries the cursor when triggered or at high frequency, but logging is now throttled.
+### 2.2. Throttled Movement [DONE]
+**Optimization:** The window is only moved if the physics engine calculates a significant position change.
+**Benefit:** Reduces compositor overhead.
 
 ## 3. Resource Management
 

@@ -5,15 +5,16 @@
 #include "../window/window.h"
 
 typedef struct {
-    int width, height, channels;
-    unsigned char* pixels;
-    void* native_image; // Holds XImage* on Linux
+    int width, height;
+    int cols, rows;
+    int target_w, target_h;
+    void** frame_cache; // Array of XImage* (Linux) or similar
 } image_t;
 
-image_t* image_load(window_t* win, const char* filename, int scale);
+image_t* image_load(window_t* win, const char* filename, int cols, int rows, int scale);
 void image_free(image_t* img);
 
-void renderer_draw_image(window_t* win, image_t* img, int sx, int sy, int sw, int sh);
+void renderer_draw_frame(window_t* win, image_t* img, int frame_index);
 void renderer_present(window_t* win);
 void renderer_cleanup(window_t* win);
 

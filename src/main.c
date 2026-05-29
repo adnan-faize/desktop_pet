@@ -55,18 +55,17 @@ int main(int argc, char** argv) {
     screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 #endif
 
-    // 3. Load spritesheet using the window's display connection
+    // 3. Load spritesheet (Cached for CPU efficiency)
+    int cols = 3, rows = 4;
     int scale = 2;
-    image_t* spritesheet = image_load(win, asset_path, scale);
+    image_t* spritesheet = image_load(win, asset_path, cols, rows, scale);
     if (!spritesheet) {
         window_destroy(win);
         return EXIT_FAILURE;
     }
 
-    // 4. Calculate animal frame size and resize window to match exactly
-    int cols = 3, rows = 4;
-    int frame_w = spritesheet->width / cols;
-    int frame_h = spritesheet->height / rows;
+    int frame_w = spritesheet->target_w;
+    int frame_h = spritesheet->target_h;
 
     window_resize(win, frame_w, frame_h);
     
@@ -86,13 +85,14 @@ int main(int argc, char** argv) {
     bool is_snatching = false;
     vec2_t snatch_target = {0, 0};
     float snatch_timer = 0;
-    float dt = 0.016f;
+    float dt = 0.016f; // Smooth movement @ ~60 FPS
     int current_frame = 0;
     int mx = screen_x + screen_w / 2;
     int my = screen_y + screen_h / 2;
     int last_mx = -1, last_my = -1;
     vec2_t last_pos = {-1, -1};
 
+    int last_rendered_frame = -1;
     while (!win->should_close) {
         window_poll_events(win);
         if (tray) tray_update(tray);
@@ -130,13 +130,15 @@ int main(int argc, char** argv) {
         
         physics_update(&pet_body, dt, (float)screen_x, (float)screen_y, (float)screen_x + (float)screen_w, (float)screen_y + (float)screen_h);
 
-        // 7. Animal movement
-        window_move(win, (int)pet_body.position.x, (int)pet_body.position.y);
+        // 7. Animal movement: only move window if position changed
+        bool pos_changed = (abs((int)pet_body.position.x - (int)last_pos.x) > 0 || 
+                            abs((int)pet_body.position.y - (int)last_pos.y) > 0);
+        if (pos_changed) {
+            window_move(win, (int)pet_body.position.x, (int)pet_body.position.y);
+        }
         
-        // Performance: Only log when there's significant movement/change
-        if (abs(mx - last_mx) > 2 || abs(my - last_my) > 2 || 
-            abs((int)pet_body.position.x - (int)last_pos.x) > 1 || 
-            abs((int)pet_body.position.y - (int)last_pos.y) > 1) {
+        // Logging Throttling
+        if (abs(mx - last_mx) > 2 || abs(my - last_my) > 2 || pos_changed) {
             log_info("Window: (%d, %d) | Cursor: (%d, %d)", 
                      (int)pet_body.position.x, (int)pet_body.position.y, mx, my);
             last_mx = mx; last_my = my;
@@ -145,20 +147,18 @@ int main(int argc, char** argv) {
 
         static float anim_timer = 0;
         anim_timer += dt;
-        if (anim_timer > (is_snatching ? 0.03f : 0.1f)) {
+        if (anim_timer >= 0.125f) { // 8 FPS
             current_frame = (current_frame + 1) % (cols * rows);
             anim_timer = 0;
         }
 
-        int sx = (current_frame % cols) * frame_w;
-        int sy = (current_frame / cols) * frame_h;
+        // 8. CPU Optimization: Only draw if frame has changed
+        if (current_frame != last_rendered_frame) {
+            renderer_draw_frame(win, spritesheet, current_frame);
+            renderer_present(win);
+            last_rendered_frame = current_frame;
+        }
 
-        // 8. Draw pre-scaled frame
-        renderer_draw_image(win, spritesheet, sx, sy, frame_w, frame_h);
-        renderer_present(win);
-
-        // Optimization: if both velocities are near zero, we could sleep longer, 
-        // but we still need to poll global mouse position.
         usleep(16000);
     }
 
