@@ -54,17 +54,29 @@ void window_resize(window_t* win, uint32_t w, uint32_t h) {
 }
 
 void window_get_mouse_pos(window_t* win, int* x, int* y) {
+    if (!win) return;
     POINT p;
-    GetCursorPos(&p);
-    *x = p.x;
-    *y = p.y;
+    if (GetCursorPos(&p)) {
+        *x = p.x;
+        *y = p.y;
+    }
 }
 
 void window_set_mouse_pos(window_t* win, int x, int y) {
     SetCursorPos(x, y);
 }
 
-void window_set_input_region(window_t* win, int x, int y, int w, int h) {}
+void window_set_input_region(window_t* win, int x, int y, int w, int h) {
+    if (!win || !win->native_handle) return;
+    HWND hwnd = (HWND)win->native_handle;
+    LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+    if (w <= 0 || h <= 0) {
+        exStyle |= WS_EX_TRANSPARENT;
+    } else {
+        exStyle &= ~WS_EX_TRANSPARENT;
+    }
+    SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
+}
 
 void window_poll_events(window_t* win) {
     MSG msg;

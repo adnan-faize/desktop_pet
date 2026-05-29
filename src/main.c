@@ -10,9 +10,11 @@
 #include "renderer/renderer.h"
 #include "physics/physics.h"
 #include "tray/tray.h"
+#include "logger/logger.h"
 
 #ifdef PLATFORM_LINUX
 #include <X11/Xlib.h>
+#include <gtk/gtk.h>
 #endif
 
 static void on_quit(void* user_data) {
@@ -22,38 +24,60 @@ static void on_quit(void* user_data) {
 
 int main(int argc, char** argv) {
     srand(time(NULL));
+#ifdef PLATFORM_LINUX
+    g_setenv("GDK_BACKEND", "x11", FALSE);
+    gtk_init(&argc, &argv);
+#endif
+    log_init("desktop_pet.log", true, 1024 * 1024); // 1MB limit for rotation
 
     const char* asset_path = "res/sprites/rabbits/Rabbit7.png";
     if (access(asset_path, F_OK) == -1) asset_path = "../res/sprites/rabbits/Rabbit7.png";
 
-    window_t* temp_win = window_create(1, 1, "Temp");
-    uint32_t screen_w = 1920, screen_h = 1080;
+    // 1. Create window first with a default size
+    window_t* win = window_create(100, 100, "Desktop Pet");
+    if (!win) return EXIT_FAILURE;
+
+    // 2. Get screen boundaries (Global)
+    int screen_x = 0, screen_y = 0;
+    int screen_w = 1920, screen_h = 1080;
 #ifdef PLATFORM_LINUX
-    Display* dpy = (Display*)temp_win->display_server;
-    XWindowAttributes root_attrs;
-    XGetWindowAttributes(dpy, RootWindow(dpy, DefaultScreen(dpy)), &root_attrs);
-    screen_w = root_attrs.width;
-    screen_h = root_attrs.height;
+    Display* dpy = (Display*)win->display_server;
+    if (dpy) {
+        XWindowAttributes root_attrs;
+        XGetWindowAttributes(dpy, RootWindow(dpy, DefaultScreen(dpy)), &root_attrs);
+        screen_w = root_attrs.width;
+        screen_h = root_attrs.height;
+    }
 #elif defined(PLATFORM_WINDOWS)
+    screen_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    screen_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
     screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 #endif
 
-    image_t* spritesheet = image_load(temp_win, asset_path);
-    if (!spritesheet) return EXIT_FAILURE;
+    // 3. Load spritesheet using the window's display connection
+    int scale = 2;
+    image_t* spritesheet = image_load(win, asset_path, scale);
+    if (!spritesheet) {
+        window_destroy(win);
+        return EXIT_FAILURE;
+    }
 
+    // 4. Calculate animal frame size and resize window to match exactly
     int cols = 3, rows = 4;
-    int frame_w = (spritesheet->width / cols) * 2;
-    int frame_h = (spritesheet->height / rows) * 2;
+    int frame_w = spritesheet->width / cols;
+    int frame_h = spritesheet->height / rows;
 
-    window_destroy(temp_win);
-    window_t* win = window_create(frame_w, frame_h, "Desktop Pet");
+    window_resize(win, frame_w, frame_h);
+    
+    // 5. Make the window click-through so it doesn't block the mouse
+    window_set_input_region(win, 0, 0, 0, 0);
 
     tray_t* tray = tray_create(asset_path, "Desktop Pet");
     if (tray) tray_add_item(tray, "Quit", on_quit, win);
 
     body_t pet_body = {
-        .position = {100, 100},
+        .position = {(float)screen_x + 100.0f, (float)screen_y + 100.0f},
         .velocity = {0, 0},
         .size = {(float)frame_w, (float)frame_h},
         .speed = 300.0f
@@ -64,16 +88,16 @@ int main(int argc, char** argv) {
     float snatch_timer = 0;
     float dt = 0.016f;
     int current_frame = 0;
-    
-    // Set the input region to cover the whole window (the rabbit's body)
-    // Since the window is exactly the size of the rabbit, 0,0 is the correct origin.
-    window_set_input_region(win, 0, 0, frame_w, frame_h);
+    int mx = screen_x + screen_w / 2;
+    int my = screen_y + screen_h / 2;
+    int last_mx = -1, last_my = -1;
+    vec2_t last_pos = {-1, -1};
 
     while (!win->should_close) {
         window_poll_events(win);
         if (tray) tray_update(tray);
 
-        int mx, my;
+        // 6. Global Mouse Tracking
         window_get_mouse_pos(win, &mx, &my);
         
         if (!is_snatching) {
@@ -82,8 +106,8 @@ int main(int argc, char** argv) {
             float dy = (float)my - (pet_body.position.y + pet_body.size.y / 2.0f);
             if (sqrtf(dx * dx + dy * dy) < 60.0f) {
                 is_snatching = true;
-                snatch_target.x = (float)(rand() % (screen_w - (int)pet_body.size.x));
-                snatch_target.y = (float)(rand() % (screen_h - (int)pet_body.size.y));
+                snatch_target.x = (float)screen_x + (float)(rand() % (screen_w - (int)pet_body.size.x));
+                snatch_target.y = (float)screen_y + (float)(rand() % (screen_h - (int)pet_body.size.y));
                 snatch_timer = 5.0f;
                 pet_body.speed = 800.0f;
             }
@@ -104,9 +128,20 @@ int main(int argc, char** argv) {
             }
         }
         
-        physics_update(&pet_body, dt, (float)screen_w, (float)screen_h);
+        physics_update(&pet_body, dt, (float)screen_x, (float)screen_y, (float)screen_x + (float)screen_w, (float)screen_y + (float)screen_h);
 
+        // 7. Animal movement
         window_move(win, (int)pet_body.position.x, (int)pet_body.position.y);
+        
+        // Performance: Only log when there's significant movement/change
+        if (abs(mx - last_mx) > 2 || abs(my - last_my) > 2 || 
+            abs((int)pet_body.position.x - (int)last_pos.x) > 1 || 
+            abs((int)pet_body.position.y - (int)last_pos.y) > 1) {
+            log_info("Window: (%d, %d) | Cursor: (%d, %d)", 
+                     (int)pet_body.position.x, (int)pet_body.position.y, mx, my);
+            last_mx = mx; last_my = my;
+            last_pos.x = pet_body.position.x; last_pos.y = pet_body.position.y;
+        }
 
         static float anim_timer = 0;
         anim_timer += dt;
@@ -115,17 +150,22 @@ int main(int argc, char** argv) {
             anim_timer = 0;
         }
 
-        int sx = (current_frame % cols) * (spritesheet->width / cols);
-        int sy = (current_frame / cols) * (spritesheet->height / rows);
+        int sx = (current_frame % cols) * frame_w;
+        int sy = (current_frame / cols) * frame_h;
 
-        renderer_draw_image(win, spritesheet, 0, 0, frame_w, frame_h, sx, sy);
+        // 8. Draw pre-scaled frame
+        renderer_draw_image(win, spritesheet, sx, sy, frame_w, frame_h);
         renderer_present(win);
 
+        // Optimization: if both velocities are near zero, we could sleep longer, 
+        // but we still need to poll global mouse position.
         usleep(16000);
     }
 
     if (tray) tray_destroy(tray);
+    renderer_cleanup(win);
     image_free(spritesheet);
     window_destroy(win);
+    log_cleanup();
     return EXIT_SUCCESS;
 }

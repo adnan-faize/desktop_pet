@@ -4,7 +4,11 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/Xfixes.h>
 #include <stdlib.h>
+
+static int global_mx = 0, global_my = 0;
+static Display* query_display = NULL;
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -16,6 +20,28 @@
 #include "window.h"
 
 static int uinput_fd = -1;
+
+static void _window_query_mouse_pos(window_t* win, int* x, int* y) {
+    if (!query_display) query_display = XOpenDisplay(NULL);
+    if (!query_display) return;
+    
+    XFlush(query_display);
+    
+    int n_screens = ScreenCount(query_display);
+    for (int i = 0; i < n_screens; i++) {
+        Window root = RootWindow(query_display, i);
+        Window root_return, child_return;
+        int root_x, root_y, win_x, win_y;
+        unsigned int mask;
+
+        if (XQueryPointer(query_display, root, &root_return, &child_return, 
+                         &root_x, &root_y, &win_x, &win_y, &mask)) {
+            *x = root_x;
+            *y = root_y;
+            return;
+        }
+    }
+}
 
 static void uinput_init() {
     uinput_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -84,6 +110,9 @@ window_t* window_create(uint32_t width, uint32_t height, const char* title) {
     win->height = height;
     win->should_close = 0;
 
+    if (!query_display) query_display = XOpenDisplay(NULL);
+    _window_query_mouse_pos(win, &global_mx, &global_my); 
+
     return win;
 }
 
@@ -104,18 +133,9 @@ void window_resize(window_t* win, uint32_t w, uint32_t h) {
 }
 
 void window_get_mouse_pos(window_t* win, int* x, int* y) {
-    Display* display = (Display*)win->display_server;
-    Window root = RootWindow(display, DefaultScreen(display));
-    Window root_return, child_return;
-    int root_x, root_y, win_x, win_y;
-    unsigned int mask;
-
-    // GLOBAL pointer query on Root window
-    if (XQueryPointer(display, root, &root_return, &child_return, 
-                     &root_x, &root_y, &win_x, &win_y, &mask)) {
-        *x = root_x;
-        *y = root_y;
-    }
+    _window_query_mouse_pos(win, &global_mx, &global_my);
+    *x = global_mx;
+    *y = global_my;
 }
 
 void window_set_mouse_pos(window_t* win, int x, int y) {
@@ -132,8 +152,21 @@ void window_set_mouse_pos(window_t* win, int x, int y) {
 }
 
 void window_set_input_region(window_t* win, int x, int y, int w, int h) {
-    // With the small window approach, we don't strictly need this unless 
-    // we want per-pixel clickthrough INSIDE the small box.
+    if (!win || !win->display_server) return;
+    Display* dpy = (Display*)win->display_server;
+    Window wnd = (Window)win->native_handle;
+    
+    XserverRegion region;
+    if (w > 0 && h > 0) {
+        XRectangle rect = { (short)x, (short)y, (unsigned short)w, (unsigned short)h };
+        region = XFixesCreateRegion(dpy, &rect, 1);
+    } else {
+        region = XFixesCreateRegion(dpy, NULL, 0);
+    }
+
+    XFixesSetWindowShapeRegion(dpy, wnd, ShapeInput, 0, 0, region);
+    XFixesDestroyRegion(dpy, region);
+    XFlush(dpy);
 }
 
 void window_poll_events(window_t* win) {
@@ -147,8 +180,23 @@ void window_poll_events(window_t* win) {
 
 void window_destroy(window_t *win) {
     if (win && win->display_server) {
-        XCloseDisplay((Display*)win->display_server);
+        Display* display = (Display*)win->display_server;
+        if (win->native_handle) {
+            XDestroyWindow(display, (Window)win->native_handle);
+        }
+        XCloseDisplay(display);
         free(win);
+    }
+    
+    if (query_display) {
+        XCloseDisplay(query_display);
+        query_display = NULL;
+    }
+
+    if (uinput_fd >= 0) {
+        ioctl(uinput_fd, UI_DEV_DESTROY);
+        close(uinput_fd);
+        uinput_fd = -1;
     }
 }
 

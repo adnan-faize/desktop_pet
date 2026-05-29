@@ -12,6 +12,8 @@ Please don't mind, rn the project is a mess :)
 
 # Features
 
+TODO : fix -> the cursor isn't read whenever it's outside the app.
+
 ## Linux Features
 
 - Seamless desktop integration

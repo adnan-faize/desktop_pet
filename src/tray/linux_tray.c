@@ -5,6 +5,7 @@
 #include <string.h>
 #include <limits.h>
 #include "tray.h"
+#include "logger/logger.h"
 
 struct tray_item_data {
     tray_callback_t callback;
@@ -37,20 +38,21 @@ static void on_tray_icon_activate(GtkStatusIcon* icon, gpointer user_data) {
 }
 
 tray_t* tray_create(const char* icon_path, const char* tooltip) {
-    // Force X11 backend for GtkStatusIcon compatibility
-    g_setenv("GDK_BACKEND", "x11", FALSE);
-
-    if (!gtk_init_check(NULL, NULL)) {
-        return NULL;
-    }
-
     char abs_path[PATH_MAX];
     if (realpath(icon_path, abs_path) == NULL) {
+        log_error("Tray: Failed to resolve icon path: %s", icon_path);
         return NULL;
     }
+    log_info("Tray: Creating with icon: %s", abs_path);
 
     tray_t* tray = calloc(1, sizeof(tray_t));
     tray->icon = gtk_status_icon_new_from_file(abs_path);
+    
+    if (!tray->icon) {
+        log_error("Tray: Failed to create GtkStatusIcon");
+        free(tray);
+        return NULL;
+    }
     
     gtk_status_icon_set_tooltip_text(tray->icon, tooltip);
     gtk_status_icon_set_visible(tray->icon, TRUE);
@@ -61,6 +63,7 @@ tray_t* tray_create(const char* icon_path, const char* tooltip) {
     g_signal_connect(tray->icon, "activate", G_CALLBACK(on_tray_icon_activate), tray);
     g_signal_connect(tray->icon, "popup-menu", G_CALLBACK(on_tray_icon_popup_menu), tray);
 
+    log_info("Tray: Created successfully");
     return tray;
 }
 
@@ -72,6 +75,9 @@ void tray_add_item(tray_t* tray, const char* text, tray_callback_t callback, voi
     data->user_data = user_data;
     
     g_signal_connect(item, "activate", G_CALLBACK(on_menu_item_activate), data);
+    // Use object data with a destroyer to prevent leaks
+    g_object_set_data_full(G_OBJECT(item), "tray-data", data, free);
+    
     gtk_menu_shell_append(GTK_MENU_SHELL(tray->menu), item);
     gtk_widget_show_all(tray->menu);
 }

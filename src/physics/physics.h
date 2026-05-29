@@ -12,7 +12,7 @@ typedef struct {
     float speed;
 } body_t;
 
-void physics_update(body_t* body, float dt, float boundary_width, float boundary_height);
+void physics_update(body_t* body, float dt, float min_x, float min_y, float max_x, float max_y);
 void physics_follow_target(body_t* body, float target_x, float target_y, float dt);
 
 #endif // PHYSICS_H_

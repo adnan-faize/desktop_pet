@@ -1,24 +1,24 @@
 #include "physics.h"
 #include <math.h>
 
-void physics_update(body_t* body, float dt, float boundary_width, float boundary_height) {
+void physics_update(body_t* body, float dt, float min_x, float min_y, float max_x, float max_y) {
     body->position.x += body->velocity.x * dt;
     body->position.y += body->velocity.y * dt;
 
     // Bounce off walls
-    if (body->position.x < 0) {
-        body->position.x = 0;
+    if (body->position.x < min_x) {
+        body->position.x = min_x;
         body->velocity.x = -body->velocity.x;
-    } else if (body->position.x + body->size.x > boundary_width) {
-        body->position.x = boundary_width - body->size.x;
+    } else if (body->position.x + body->size.x > max_x) {
+        body->position.x = max_x - body->size.x;
         body->velocity.x = -body->velocity.x;
     }
 
-    if (body->position.y < 0) {
-        body->position.y = 0;
+    if (body->position.y < min_y) {
+        body->position.y = min_y;
         body->velocity.y = -body->velocity.y;
-    } else if (body->position.y + body->size.y > boundary_height) {
-        body->position.y = boundary_height - body->size.y;
+    } else if (body->position.y + body->size.y > max_y) {
+        body->position.y = max_y - body->size.y;
         body->velocity.y = -body->velocity.y;
     }
 }

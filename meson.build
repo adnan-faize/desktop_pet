@@ -11,19 +11,24 @@ version_macro = '-DAPP_VERSION="v.' + meson.project_version() + '"'
 add_project_arguments(version_macro, language: 'c')
 
 cc = meson.get_compiler('c')
-m_dep = cc.find_library('m', required : false)
+m_dep = cc.find_library('m', required: false)
+z_dep = dependency('zlib', required: false)
 
 app_sources = files(
     'src/main.c',
-    'src/window/linux_window.c',
-    'src/window/windows_window.c',
-    'src/renderer/renderer.c',
     'src/physics/physics.c',
+    'src/renderer/renderer.c',
     'src/tray/linux_tray.c',
     'src/tray/win_tray.c',
+    'src/window/linux_window.c',
+    'src/window/windows_window.c',
 )
 
 dependencies = [m_dep]
+if z_dep.found()
+    dependencies += z_dep
+    add_project_arguments('-DHAVE_ZLIB', language: 'c')
+endif
 
 target_os = host_machine.system()
 
@@ -39,6 +44,8 @@ elif target_os == 'linux'
     dependencies += [
         dependency('x11'),
         dependency('xext'),
+        dependency('xfixes'),
+        dependency('xi'),
         dependency('gtk+-3.0'),
     ]
 endif
