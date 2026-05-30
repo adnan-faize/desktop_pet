@@ -6,15 +6,13 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xfixes.h>
 #include <stdlib.h>
-
-static int global_mx = 0, global_my = 0;
-static Display* query_display = NULL;
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <linux/uinput.h>
 
 #include "window.h"
@@ -22,19 +20,19 @@ static Display* query_display = NULL;
 static int uinput_fd = -1;
 
 static void _window_query_mouse_pos(window_t* win, int* x, int* y) {
-    if (!query_display) query_display = XOpenDisplay(NULL);
-    if (!query_display) return;
+    if (!win || !win->display_server) return;
+    Display* dpy = (Display*)win->display_server;
     
-    XFlush(query_display);
+    XFlush(dpy);
     
-    int n_screens = ScreenCount(query_display);
+    int n_screens = ScreenCount(dpy);
     for (int i = 0; i < n_screens; i++) {
-        Window root = RootWindow(query_display, i);
+        Window root = RootWindow(dpy, i);
         Window root_return, child_return;
         int root_x, root_y, win_x, win_y;
         unsigned int mask;
 
-        if (XQueryPointer(query_display, root, &root_return, &child_return, 
+        if (XQueryPointer(dpy, root, &root_return, &child_return, 
                          &root_x, &root_y, &win_x, &win_y, &mask)) {
             *x = root_x;
             *y = root_y;
@@ -106,12 +104,10 @@ window_t* window_create(uint32_t width, uint32_t height, const char* title) {
     window_t* win = malloc(sizeof(window_t));
     win->native_handle = (void*)window;
     win->display_server = (void*)display;
+    win->renderer_data = NULL;
     win->width = width;
     win->height = height;
     win->should_close = 0;
-
-    if (!query_display) query_display = XOpenDisplay(NULL);
-    _window_query_mouse_pos(win, &global_mx, &global_my); 
 
     return win;
 }
@@ -133,9 +129,10 @@ void window_resize(window_t* win, uint32_t w, uint32_t h) {
 }
 
 void window_get_mouse_pos(window_t* win, int* x, int* y) {
-    _window_query_mouse_pos(win, &global_mx, &global_my);
-    *x = global_mx;
-    *y = global_my;
+    int dummy_x = 0, dummy_y = 0;
+    _window_query_mouse_pos(win, &dummy_x, &dummy_y);
+    *x = dummy_x;
+    *y = dummy_y;
 }
 
 void window_set_mouse_pos(window_t* win, int x, int y) {
@@ -186,11 +183,6 @@ void window_destroy(window_t *win) {
         }
         XCloseDisplay(display);
         free(win);
-    }
-    
-    if (query_display) {
-        XCloseDisplay(query_display);
-        query_display = NULL;
     }
 
     if (uinput_fd >= 0) {

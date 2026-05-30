@@ -6,6 +6,7 @@
 struct _window_t {
     void *native_handle;
     void *display_server;
+    void *renderer_data;
     uint32_t width;
     uint32_t height;
     int should_close;

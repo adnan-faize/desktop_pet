@@ -8,8 +8,6 @@
 #ifdef PLATFORM_LINUX
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-
-static GC global_gc = NULL;
 #endif
 
 image_t* image_load(window_t* win, const char* filename, int cols, int rows, int scale) {
@@ -84,11 +82,12 @@ void renderer_draw_frame(window_t* win, image_t* img, int frame_index) {
 #ifdef PLATFORM_LINUX
     Display* display = (Display*)win->display_server;
     Window window = (Window)win->native_handle;
-    if (!global_gc) global_gc = XCreateGC(display, window, 0, NULL);
+    if (!win->renderer_data) win->renderer_data = (void*)XCreateGC(display, window, 0, NULL);
+    GC gc = (GC)win->renderer_data;
 
     XImage* ximg = (XImage*)img->frame_cache[frame_index];
     if (ximg) {
-        XPutImage(display, window, global_gc, ximg, 0, 0, 0, 0, img->target_w, img->target_h);
+        XPutImage(display, window, gc, ximg, 0, 0, 0, 0, img->target_w, img->target_h);
     }
 #endif
 }
@@ -101,9 +100,9 @@ void renderer_present(window_t* win) {
 
 void renderer_cleanup(window_t* win) {
 #ifdef PLATFORM_LINUX
-    if (global_gc && win && win->display_server) {
-        XFreeGC((Display*)win->display_server, global_gc);
-        global_gc = NULL;
+    if (win && win->display_server && win->renderer_data) {
+        XFreeGC((Display*)win->display_server, (GC)win->renderer_data);
+        win->renderer_data = NULL;
     }
 #endif
 }

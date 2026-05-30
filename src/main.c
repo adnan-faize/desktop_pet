@@ -17,9 +17,26 @@
 #include <gtk/gtk.h>
 #endif
 
+#define NUM_PETS 10
+
+typedef struct {
+    window_t* win;
+    body_t body;
+    image_t* spritesheet;
+    bool is_snatching;
+    vec2_t snatch_target;
+    float snatch_timer;
+    int current_frame;
+    int last_rendered_frame;
+    float anim_timer;
+    vec2_t last_pos;
+} pet_t;
+
+static bool should_exit = false;
+
 static void on_quit(void* user_data) {
-    window_t* win = (window_t*)user_data;
-    win->should_close = 1;
+    (void)user_data;
+    should_exit = true;
 }
 
 int main(int argc, char** argv) {
@@ -33,139 +50,133 @@ int main(int argc, char** argv) {
     const char* asset_path = "res/sprites/rabbits/Rabbit7.png";
     if (access(asset_path, F_OK) == -1) asset_path = "../res/sprites/rabbits/Rabbit7.png";
 
-    // 1. Create window first with a default size
-    window_t* win = window_create(100, 100, "Desktop Pet");
-    if (!win) return EXIT_FAILURE;
-
-    // 2. Get screen boundaries (Global)
+    pet_t pets[NUM_PETS];
     int screen_x = 0, screen_y = 0;
     int screen_w = 1920, screen_h = 1080;
+
+    for (int i = 0; i < NUM_PETS; i++) {
+        pets[i].win = window_create(100, 100, "Desktop Pet");
+        if (!pets[i].win) return EXIT_FAILURE;
+
+        if (i == 0) {
 #ifdef PLATFORM_LINUX
-    Display* dpy = (Display*)win->display_server;
-    if (dpy) {
-        XWindowAttributes root_attrs;
-        XGetWindowAttributes(dpy, RootWindow(dpy, DefaultScreen(dpy)), &root_attrs);
-        screen_w = root_attrs.width;
-        screen_h = root_attrs.height;
-    }
+            Display* dpy = (Display*)pets[i].win->display_server;
+            if (dpy) {
+                XWindowAttributes root_attrs;
+                XGetWindowAttributes(dpy, RootWindow(dpy, DefaultScreen(dpy)), &root_attrs);
+                screen_w = root_attrs.width;
+                screen_h = root_attrs.height;
+            }
 #elif defined(PLATFORM_WINDOWS)
-    screen_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    screen_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            screen_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            screen_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            screen_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            screen_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 #endif
+        }
 
-    // 3. Load spritesheet (Cached for CPU efficiency)
-    int cols = 3, rows = 4;
-    int scale = 2;
-    image_t* spritesheet = image_load(win, asset_path, cols, rows, scale);
-    if (!spritesheet) {
-        window_destroy(win);
-        return EXIT_FAILURE;
+        int cols = 3, rows = 4;
+        int scale = 2;
+        pets[i].spritesheet = image_load(pets[i].win, asset_path, cols, rows, scale);
+        if (!pets[i].spritesheet) return EXIT_FAILURE;
+
+        int frame_w = pets[i].spritesheet->target_w;
+        int frame_h = pets[i].spritesheet->target_h;
+
+        window_resize(pets[i].win, frame_w, frame_h);
+        window_set_input_region(pets[i].win, 0, 0, 0, 0);
+
+        pets[i].body.position.x = (float)screen_x + (float)(rand() % (screen_w - frame_w));
+        pets[i].body.position.y = (float)screen_y + (float)(rand() % (screen_h - frame_h));
+        pets[i].body.velocity.x = 0;
+        pets[i].body.velocity.y = 0;
+        pets[i].body.size.x = (float)frame_w;
+        pets[i].body.size.y = (float)frame_h;
+        pets[i].body.speed = 300.0f + (rand() % 100);
+
+        pets[i].is_snatching = false;
+        pets[i].snatch_target = (vec2_t){0, 0};
+        pets[i].snatch_timer = 0;
+        pets[i].current_frame = 0;
+        pets[i].last_rendered_frame = -1;
+        pets[i].anim_timer = (float)(rand() % 100) / 1000.0f;
+        pets[i].last_pos = (vec2_t){-1, -1};
     }
-
-    int frame_w = spritesheet->target_w;
-    int frame_h = spritesheet->target_h;
-
-    window_resize(win, frame_w, frame_h);
-    
-    // 5. Make the window click-through so it doesn't block the mouse
-    window_set_input_region(win, 0, 0, 0, 0);
 
     tray_t* tray = tray_create(asset_path, "Desktop Pet");
-    if (tray) tray_add_item(tray, "Quit", on_quit, win);
+    if (tray) tray_add_item(tray, "Quit", on_quit, NULL);
 
-    body_t pet_body = {
-        .position = {(float)screen_x + 100.0f, (float)screen_y + 100.0f},
-        .velocity = {0, 0},
-        .size = {(float)frame_w, (float)frame_h},
-        .speed = 300.0f
-    };
-
-    bool is_snatching = false;
-    vec2_t snatch_target = {0, 0};
-    float snatch_timer = 0;
-    float dt = 0.016f; // Smooth movement @ ~60 FPS
-    int current_frame = 0;
-    int mx = screen_x + screen_w / 2;
-    int my = screen_y + screen_h / 2;
-    int last_mx = -1, last_my = -1;
-    vec2_t last_pos = {-1, -1};
-
-    int last_rendered_frame = -1;
-    while (!win->should_close) {
-        window_poll_events(win);
+    float dt = 0.016f;
+    int mx, my;
+    
+    while (!should_exit) {
         if (tray) tray_update(tray);
 
-        // 6. Global Mouse Tracking
-        window_get_mouse_pos(win, &mx, &my);
-        
-        if (!is_snatching) {
-            physics_follow_target(&pet_body, (float)mx, (float)my, dt);
-            float dx = (float)mx - (pet_body.position.x + pet_body.size.x / 2.0f);
-            float dy = (float)my - (pet_body.position.y + pet_body.size.y / 2.0f);
-            if (sqrtf(dx * dx + dy * dy) < 60.0f) {
-                is_snatching = true;
-                snatch_target.x = (float)screen_x + (float)(rand() % (screen_w - (int)pet_body.size.x));
-                snatch_target.y = (float)screen_y + (float)(rand() % (screen_h - (int)pet_body.size.y));
-                snatch_timer = 5.0f;
-                pet_body.speed = 800.0f;
+        for (int i = 0; i < NUM_PETS; i++) {
+            window_poll_events(pets[i].win);
+            if (pets[i].win->should_close) should_exit = true;
+
+            window_get_mouse_pos(pets[i].win, &mx, &my);
+
+            if (!pets[i].is_snatching) {
+                physics_follow_target(&pets[i].body, (float)mx, (float)my, dt);
+                float dx = (float)mx - (pets[i].body.position.x + pets[i].body.size.x / 2.0f);
+                float dy = (float)my - (pets[i].body.position.y + pets[i].body.size.y / 2.0f);
+                if (sqrtf(dx * dx + dy * dy) < 60.0f) {
+                    pets[i].is_snatching = true;
+                    pets[i].snatch_target.x = (float)screen_x + (float)(rand() % (screen_w - (int)pets[i].body.size.x));
+                    pets[i].snatch_target.y = (float)screen_y + (float)(rand() % (screen_h - (int)pets[i].body.size.y));
+                    pets[i].snatch_timer = 5.0f;
+                    pets[i].body.speed = 800.0f;
+                }
+            } else {
+                physics_follow_target(&pets[i].body, pets[i].snatch_target.x, pets[i].snatch_target.y, dt);
+                int jx = (rand() % 10) - 5, jy = (rand() % 10) - 5;
+                window_set_mouse_pos(pets[i].win, (int)(pets[i].body.position.x + pets[i].body.size.x / 2.0f) + jx, 
+                                         (int)(pets[i].body.position.y + pets[i].body.size.y / 2.0f) + jy);
+                
+                pets[i].snatch_timer -= dt;
+                int nx, ny;
+                window_get_mouse_pos(pets[i].win, &nx, &ny);
+                float rdx = (float)nx - (pets[i].body.position.x + pets[i].body.size.x / 2.0f);
+                float rdy = (float)ny - (pets[i].body.position.y + pets[i].body.size.y / 2.0f);
+                if (sqrtf(rdx * rdx + rdy * rdy) > 200.0f || pets[i].snatch_timer <= 0) {
+                    pets[i].is_snatching = false;
+                    pets[i].body.speed = 300.0f + (rand() % 100);
+                }
             }
-        } else {
-            physics_follow_target(&pet_body, snatch_target.x, snatch_target.y, dt);
-            int jx = (rand() % 10) - 5, jy = (rand() % 10) - 5;
-            window_set_mouse_pos(win, (int)(pet_body.position.x + pet_body.size.x / 2.0f) + jx, 
-                                     (int)(pet_body.position.y + pet_body.size.y / 2.0f) + jy);
-            
-            snatch_timer -= dt;
-            int nx, ny;
-            window_get_mouse_pos(win, &nx, &ny);
-            float rdx = (float)nx - (pet_body.position.x + pet_body.size.x / 2.0f);
-            float rdy = (float)ny - (pet_body.position.y + pet_body.size.y / 2.0f);
-            if (sqrtf(rdx * rdx + rdy * rdy) > 200.0f || snatch_timer <= 0) {
-                is_snatching = false;
-                pet_body.speed = 300.0f;
+
+            physics_update(&pets[i].body, dt, (float)screen_x, (float)screen_y, (float)screen_x + (float)screen_w, (float)screen_y + (float)screen_h);
+
+            bool pos_changed = (abs((int)pets[i].body.position.x - (int)pets[i].last_pos.x) > 0 || 
+                                abs((int)pets[i].body.position.y - (int)pets[i].last_pos.y) > 0);
+            if (pos_changed) {
+                window_move(pets[i].win, (int)pets[i].body.position.x, (int)pets[i].body.position.y);
+                pets[i].last_pos = pets[i].body.position;
             }
-        }
-        
-        physics_update(&pet_body, dt, (float)screen_x, (float)screen_y, (float)screen_x + (float)screen_w, (float)screen_y + (float)screen_h);
 
-        // 7. Animal movement: only move window if position changed
-        bool pos_changed = (abs((int)pet_body.position.x - (int)last_pos.x) > 0 || 
-                            abs((int)pet_body.position.y - (int)last_pos.y) > 0);
-        if (pos_changed) {
-            window_move(win, (int)pet_body.position.x, (int)pet_body.position.y);
-        }
-        
-        // Logging Throttling
-        if (abs(mx - last_mx) > 2 || abs(my - last_my) > 2 || pos_changed) {
-            log_info("Window: (%d, %d) | Cursor: (%d, %d)", 
-                     (int)pet_body.position.x, (int)pet_body.position.y, mx, my);
-            last_mx = mx; last_my = my;
-            last_pos.x = pet_body.position.x; last_pos.y = pet_body.position.y;
-        }
+            pets[i].anim_timer += dt;
+            if (pets[i].anim_timer >= 0.125f) {
+                pets[i].current_frame = (pets[i].current_frame + 1) % (pets[i].spritesheet->cols * pets[i].spritesheet->rows);
+                pets[i].anim_timer = 0;
+            }
 
-        static float anim_timer = 0;
-        anim_timer += dt;
-        if (anim_timer >= 0.125f) { // 8 FPS
-            current_frame = (current_frame + 1) % (cols * rows);
-            anim_timer = 0;
-        }
-
-        // 8. CPU Optimization: Only draw if frame has changed
-        if (current_frame != last_rendered_frame) {
-            renderer_draw_frame(win, spritesheet, current_frame);
-            renderer_present(win);
-            last_rendered_frame = current_frame;
+            if (pets[i].current_frame != pets[i].last_rendered_frame) {
+                renderer_draw_frame(pets[i].win, pets[i].spritesheet, pets[i].current_frame);
+                renderer_present(pets[i].win);
+                pets[i].last_rendered_frame = pets[i].current_frame;
+            }
         }
 
         usleep(16000);
     }
 
     if (tray) tray_destroy(tray);
-    renderer_cleanup(win);
-    image_free(spritesheet);
-    window_destroy(win);
+    for (int i = 0; i < NUM_PETS; i++) {
+        renderer_cleanup(pets[i].win);
+        image_free(pets[i].spritesheet);
+        window_destroy(pets[i].win);
+    }
     log_cleanup();
     return EXIT_SUCCESS;
 }
